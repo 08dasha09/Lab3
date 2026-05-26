@@ -4,28 +4,27 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import com.example.lab3.models.RecipeViewModel
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.filled.ArrowBack
-import com.example.lab3.models.Recipe
-import java.util.UUID
+import com.example.lab3.domain.models.Recipe
+import com.example.lab3.ui.viewmodel.RecipeViewModel
 
 val Burgundy = Color(0xFF430119)
 val DustyRose = Color(0xFFE0BCD0)
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,15 +72,32 @@ fun RecipesListScreen(navController: NavController, viewModel: RecipeViewModel) 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddRecipeScreen(navController: NavController, viewModel: RecipeViewModel, recipeId: String?) {
+fun AddRecipeScreen(navController: NavController, viewModel: RecipeViewModel, recipeId: String) {
     val isEditing = recipeId != "new"
-    val existingRecipe = if (isEditing) viewModel.getRecipeById(recipeId!!) else null
+    val editingId = recipeId.toIntOrNull()
 
-    var name by remember { mutableStateOf(existingRecipe?.name ?: "") }
-    var ingredients by remember { mutableStateOf(existingRecipe?.ingredients ?: "") }
-    var instructions by remember { mutableStateOf(existingRecipe?.instructions ?: "") }
-    var timeMin by remember { mutableStateOf(existingRecipe?.timeMin?.toString() ?: "") }
-    var difficulty by remember { mutableStateOf(existingRecipe?.difficulty ?: "Легко") }
+    val existingRecipe by if (isEditing && editingId != null) {
+        viewModel.getRecipeById(editingId).collectAsState(initial = null)
+    } else {
+        remember { mutableStateOf(null) }
+    }
+
+    var name by remember { mutableStateOf("") }
+    var ingredients by remember { mutableStateOf("") }
+    var instructions by remember { mutableStateOf("") }
+    var timeMin by remember { mutableStateOf("") }
+    var difficulty by remember { mutableStateOf("Легко") }
+
+    // Заповнюємо поля, коли дані рецепту завантажились із бази
+    LaunchedEffect(existingRecipe) {
+        existingRecipe?.let {
+            name = it.name
+            ingredients = it.ingredients
+            instructions = it.instructions
+            timeMin = it.timeMin.toString()
+            difficulty = it.difficulty
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -122,15 +138,14 @@ fun AddRecipeScreen(navController: NavController, viewModel: RecipeViewModel, re
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Button(
-                    onClick = { navController.popBackStack() }, // Скасувати
+                    onClick = { navController.popBackStack() },
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Gray)
                 ) { Text("Скасувати") }
 
                 Button(
                     onClick = {
                         val newRecipe = Recipe(
-                            id = existingRecipe?.id ?: UUID.randomUUID()
-                                .toString(),
+                            id = existingRecipe?.id ?: 0,
                             name = name,
                             ingredients = ingredients,
                             instructions = instructions,
@@ -149,10 +164,11 @@ fun AddRecipeScreen(navController: NavController, viewModel: RecipeViewModel, re
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DetailsRecipeScreen(navController: NavController, viewModel: RecipeViewModel, recipeId: String) {
-    val recipe = viewModel.getRecipeById(recipeId)
+fun DetailsRecipeScreen(navController: NavController, viewModel: RecipeViewModel, recipeId: Int) {
+    val recipe by viewModel.getRecipeById(recipeId).collectAsState(initial = null)
 
-    if (recipe == null) {
+    val currentRecipe = recipe
+    if (currentRecipe == null) {
         Text("Рецепт не знайдено")
         return
     }
@@ -171,23 +187,23 @@ fun DetailsRecipeScreen(navController: NavController, viewModel: RecipeViewModel
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).padding(16.dp).fillMaxSize()) {
-            Text(text = recipe.name, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Burgundy)
+            Text(text = currentRecipe.name, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Burgundy)
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(text = "Інгредієнти:", fontWeight = FontWeight.Bold)
-            Text(text = recipe.ingredients)
+            Text(text = currentRecipe.ingredients)
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(text = "Інструкції:", fontWeight = FontWeight.Bold)
-            Text(text = recipe.instructions)
+            Text(text = currentRecipe.instructions)
             Spacer(modifier = Modifier.height(8.dp))
 
-            Text(text = "Час: ${recipe.timeMin} хвилин", fontWeight = FontWeight.Bold, color = Color.DarkGray)
+            Text(text = "Час: ${currentRecipe.timeMin} хвилин", fontWeight = FontWeight.Bold, color = Color.DarkGray)
 
             Box(
                 modifier = Modifier.padding(top = 8.dp).background(DustyRose, RoundedCornerShape(8.dp)).padding(8.dp)
             ) {
-                Text(text = "Складність: ${recipe.difficulty}", color = Burgundy, fontWeight = FontWeight.Bold)
+                Text(text = "Складність: ${currentRecipe.difficulty}", color = Burgundy, fontWeight = FontWeight.Bold)
             }
 
             Spacer(modifier = Modifier.weight(1f))
@@ -195,14 +211,14 @@ fun DetailsRecipeScreen(navController: NavController, viewModel: RecipeViewModel
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Button(
                     onClick = {
-                        viewModel.deleteRecipe(recipeId)
+                        viewModel.deleteRecipe(currentRecipe)
                         navController.popBackStack()
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
                 ) { Text("Видалити") }
 
                 Button(
-                    onClick = { navController.navigate("add/${recipeId}") },
+                    onClick = { navController.navigate("add/${currentRecipe.id}") },
                     colors = ButtonDefaults.buttonColors(containerColor = Burgundy)
                 ) { Text("Редагувати") }
             }
